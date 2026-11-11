@@ -11,9 +11,17 @@ import { buildMaterial, registerMaterial } from './materials.js';
 // textures: { map, normalMap, bumpMap, roughnessMap } aplicadas manualmente (OBJ sem .mtl e FBX
 //           sem referências de textura). repeat: repetição UV.
 // material: parâmetros do MeshStandardMaterial usados no lugar do material original.
+// base: nome da malha que define o CHÃO do modelo (escala, centro e altura são medidos nela;
+//       sem isso, usa a caixa do modelo inteiro).
+// hide: nomes de malhas a esconder depois de posicionar o modelo.
 // Créditos e licenças de cada modelo vão no README.
 export const MODELS = [
+  // A cidade traz: prédios, um plano de chão branco (Plane_Material.011_0) e uma cúpula-céu
+  // com foto panorâmica (Sphere_Material.010_0) cujo fundo desce ~0,27 abaixo da rua.
+  // Medir a caixa do modelo inteiro faria a cidade flutuar; por isso alinhamos pelo plano da
+  // rua e o escondemos: o asfalto texturizado do terreno passa a ser o chão da cidade.
   { name: 'Cidade noturna (glTF)', format: 'gltf', url: '/models/city/scene.gltf',
+    base: 'Plane_Material011_0', hide: ['Plane_Material011_0'],
     size: 60, position: [0, 0, 0], color: 0x4466ff },
 
   // Poste: o OBJ veio sem textura, mas com UVs (0..1). Usa textura procedural de metal
@@ -80,15 +88,29 @@ function placeholder(m) {
   return g;
 }
 
-function normalize(obj, size, position) {
-  const box = new THREE.Box3().setFromObject(obj);
+// Os nomes passam pelo GLTFLoader (que remove pontos etc.): compara só letras e números.
+const clean = (t) => t.replace(/[^A-Za-z0-9]/g, '');
+function findByName(root, name) {
+  let found = null;
+  root.traverse((o) => { if (!found && clean(o.name) === clean(name)) found = o; });
+  return found;
+}
+
+function normalize(obj, size, position, baseName) {
+  obj.updateMatrixWorld(true); // as matrizes dos filhos precisam estar atualizadas antes de medir
+  const base = baseName ? findByName(obj, baseName) : null;
+  if (baseName && !base) console.warn(`[modelo] malha de base "${baseName}" não encontrada; usando o modelo inteiro`);
+  const ref = base ?? obj;
+
+  let box = new THREE.Box3().setFromObject(ref);
   const dims = box.getSize(new THREE.Vector3());
   obj.scale.multiplyScalar(size / Math.max(dims.x, dims.y, dims.z));
   obj.updateMatrixWorld(true);
-  box.setFromObject(obj);
+
+  box = new THREE.Box3().setFromObject(ref);
   const c = box.getCenter(new THREE.Vector3());
   obj.position.x += position[0] - c.x;
-  obj.position.y += position[1] - box.min.y; // apoia no chão
+  obj.position.y += position[1] - box.min.y; // apoia o chão do modelo em y = position[1]
   obj.position.z += position[2] - c.z;
 }
 
@@ -104,7 +126,11 @@ export async function loadModels(scene, onStatus) {
       obj = placeholder(m);
       ok = false;
     }
-    normalize(obj, m.size, m.position);
+    normalize(obj, m.size, m.position, m.base);
+    for (const name of m.hide ?? []) {
+      const o = findByName(obj, name);
+      if (o) o.visible = false;
+    }
     obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(obj);
     onStatus(m.name, ok);
