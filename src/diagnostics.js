@@ -112,7 +112,12 @@ export function createDiagnostics({ renderer, scene, camera }) {
       camera.updateMatrixWorld();
       helper.update();
       helper.visible = true;
+      // A neblina apagaria a vista de cima (câmera a 220 unidades): zera a densidade só aqui.
+      const fog = scene.fog;
+      const density = fog ? fog.density : 0;
+      if (fog) fog.density = 0;
       renderer.render(scene, topCam);
+      if (fog) fog.density = density;
     }
   }
 

@@ -3,31 +3,39 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { buildMaterial, registerMaterial } from './materials.js';
 
 // Os arquivos ficam em /public/models/... (servidos na raiz pelo Vite).
 // size: maior dimensão final do modelo na cena (a escala original é arbitrária).
 // position: onde fica o centro (x, z) e o chão (y) do modelo.
-// textures: imagens aplicadas manualmente (OBJ sem .mtl e FBX sem referências de textura).
+// textures: { map, normalMap, bumpMap, roughnessMap } aplicadas manualmente (OBJ sem .mtl e FBX
+//           sem referências de textura). repeat: repetição UV.
 // material: parâmetros do MeshStandardMaterial usados no lugar do material original.
 // Créditos e licenças de cada modelo vão no README.
 export const MODELS = [
   { name: 'Cidade noturna (glTF)', format: 'gltf', url: '/models/city/scene.gltf',
     size: 60, position: [0, 0, 0], color: 0x4466ff },
 
-  // Poste: o OBJ veio sem .mtl e sem imagem de textura (tem UVs, então
-  // dá para aplicar uma textura no M3 via textures.map).
+  // Poste: o OBJ veio sem textura, mas com UVs (0..1). Usa textura procedural de metal
+  // pintado (tools/gerar_texturas.py): cor + bump map (relevo) + mapa de rugosidade.
   { name: 'Poste (OBJ)', format: 'obj', url: '/models/poste/poste.obj',
-    material: { color: 0x8a919c, metalness: 0.6, roughness: 0.5 },
+    textures: {
+      map: '/textures/metal_diffuse.jpg',
+      bumpMap: '/textures/metal_bump.png',
+      roughnessMap: '/textures/metal_roughness.jpg',
+    },
+    material: { metalness: 0.5, roughness: 1, bumpScale: 2 },
+    repeat: [2, 2],
     size: 6, position: [-9, 0, 38], color: 0xff8844 },
 
-  // Moto Akira: textura difusa + normal map (relevo).
+  // Moto Akira: textura difusa + normal map (relevo) do autor do modelo.
   // Se o relevo parecer invertido, tente material.normalScale = new THREE.Vector2(1, -1).
   { name: 'Moto Akira (FBX)', format: 'fbx', url: '/models/akira/AM_LP.fbx',
     textures: {
       map: '/models/akira/textures/sketchfab_diffuse.jpg',
       normalMap: '/models/akira/textures/AM_LP_01_-_Default_Normal.png',
     },
-    material: { metalness: 0.3, roughness: 0.6 },
+    material: { metalness: 0.5, roughness: 0.45 },
     size: 2.2, position: [9, 0, 38], color: 0x44cc88 },
 ];
 
@@ -56,19 +64,12 @@ function loadRaw(m) {
   });
 }
 
-// Substitui os materiais por um MeshStandardMaterial com as texturas/parâmetros do config.
+// Substitui os materiais originais por um MeshStandardMaterial compartilhado pelo modelo.
 function applyMaterials(obj, m) {
   if (!m.textures && !m.material) return;
-  const params = { ...(m.material ?? {}) };
-  const loader = new THREE.TextureLoader();
-  if (m.textures?.map) {
-    params.map = loader.load(m.textures.map);
-    params.map.colorSpace = THREE.SRGBColorSpace; // cor: sRGB; normal map fica linear
-  }
-  if (m.textures?.normalMap) params.normalMap = loader.load(m.textures.normalMap);
-  obj.traverse((o) => {
-    if (o.isMesh) o.material = new THREE.MeshStandardMaterial(params);
-  });
+  const mat = buildMaterial({ params: m.material, textures: m.textures, repeat: m.repeat });
+  registerMaterial(m.name, mat); // entra no painel "Materiais e texturas"
+  obj.traverse((o) => { if (o.isMesh) o.material = mat; });
 }
 
 // Se o arquivo não existir (ainda), usa um cubo colorido para a cena continuar funcionando.

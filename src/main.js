@@ -3,6 +3,9 @@ import { createNavigation } from './navigation.js';
 import { createDiagnostics } from './diagnostics.js';
 import { loadModels } from './models.js';
 import { createLights } from './lights.js';
+import { initTextures } from './textures.js';
+import { buildMaterial, registerMaterial, createMaterialControls } from './materials.js';
+import { createEnvironment } from './environment.js';
 
 // --- Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -20,11 +23,24 @@ scene.background = new THREE.Color(0x0b1020);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 150);
 camera.position.set(0, 1.7, 50); // altura dos olhos, olhando para -Z
 
-// --- Terreno (provisório; texturas entram no M3) ---
+// --- Terreno: asfalto molhado (M3) ---
+// Textura de cor + normal map (relevo do grão) + mapa de rugosidade (poças = liso, seco = áspero).
+// O PlaneGeometry tem UV 0..1; repeat 60 repete a textura 60x (1 tile = 5 unidades).
+initTextures(renderer);
+const groundMat = buildMaterial({
+  params: { metalness: 0, roughness: 1 },
+  textures: {
+    map: '/textures/asfalto_diffuse.jpg',
+    normalMap: '/textures/asfalto_normal.png',
+    roughnessMap: '/textures/asfalto_roughness.jpg',
+  },
+  repeat: [60, 60],
+});
+registerMaterial('Asfalto (terreno)', groundMat);
 // y = -0.02 evita z-fighting com a base dos modelos, que ficam em y = 0.
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(300, 300),
-  new THREE.MeshStandardMaterial({ color: 0x1a1f2b, roughness: 0.95 }),
+  groundMat,
 );
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
@@ -35,6 +51,8 @@ scene.add(ground);
 const nav = createNavigation(camera, renderer.domElement);
 const diag = createDiagnostics({ renderer, scene, camera });
 const lights = createLights(scene, renderer, diag.gui); // luzes e sombras: ver lights.js
+createEnvironment(scene, renderer, diag.gui);           // neblina + reflexos: ver environment.js
+createMaterialControls(diag.gui);                       // painel de materiais: ver materials.js
 
 const modelStatus = {};
 loadModels(scene, (name, ok) => { modelStatus[name] = ok; }).then(() => diag.apply());
